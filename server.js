@@ -98,4 +98,13 @@ const App = () => {
   );
 };
 
+app.get('/api/setup-users', async (req, res) => {
+    await User.create([
+      { name: 'Кассир', email: 'cashier@test.com', password: '123', role: 'cashier' },
+      { name: 'Менеджер', email: 'manager@test.com', password: '123', role: 'manager' },
+      { name: 'Админ', email: 'admin@test.com', password: '123', role: 'admin' }
+    ]);
+    res.json({ message: 'Пользователи созданы' });
+  });
+
 export default App;
