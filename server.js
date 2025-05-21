@@ -1,94 +1,101 @@
-const express = require('express');
-     const mongoose = require('mongoose');
-     const jwt = require('jsonwebtoken');
-     const cors = require('cors');
-     require('dotenv').config();
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import axios from 'axios';
+import './App.css';
 
-     const app = express();
-     app.use(cors({ origin: 'https://cashbox-frontend.onrender.com' }));
-     app.use(express.json());
+const Login = ({ setUser }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
-     // Тестовый маршрут
-     app.get('/', (req, res) => {
-       res.json({ message: 'Бэкенд кассы зоомагазина работает!' });
-     });
+  const handleLogin = async () => {
+    try {
+      const response = await axios.post('https://cashbox-backend.onrender.com/api/login', { email, password });
+      setUser(response.data.user);
+      localStorage.setItem('token', response.data.token);
+    } catch (err) {
+      console.error('Login error:', err.response?.data || err.message);
+      setError('Ошибка входа: ' + (err.response?.data?.error || err.message));
+    }
+  };
 
-     // Подключение к MongoDB Atlas
-     mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-       .then(() => console.log('Connected to MongoDB Atlas'))
-       .catch(err => console.error('MongoDB connection error:', err));
+  return (
+    <div className="max-w-md mx-auto bg-white p-6 rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold mb-4">Вход в кассу зоомагазина</h1>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+        className="w-full p-2 mb-4 border rounded"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Пароль"
+        className="w-full p-2 mb-4 border rounded"
+      />
+      <button
+        onClick={handleLogin}
+        className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+      >
+        Войти
+      </button>
+      {error && <p className="text-red-500 mt-2">{error}</p>}
+    </div>
+  );
+};
 
-     // Схемы
-     const userSchema = new mongoose.Schema({
-       name: String,
-       email: String,
-       password: String,
-       role: { type: String, enum: ['cashier', 'manager', 'admin'] }
-     });
-     const productSchema = new mongoose.Schema({
-       name: String,
-       price: Number,
-       category: String,
-       stock: Number
-     });
-     const orderSchema = new mongoose.Schema({
-       products: [{ productId: mongoose.Schema.Types.ObjectId, quantity: Number }],
-       total: Number,
-       cashierId: mongoose.Schema.Types.ObjectId,
-       date: { type: Date, default: Date.now },
-       status: { type: String, enum: ['pending', 'completed'], default: 'pending' }
-     });
+const CashierDashboard = () => (
+  <div className="container mx-auto p-4">
+    <h1 className="text-2xl font-bold">Касса</h1>
+    <p>Оформление заказов, список товаров</p>
+  </div>
+);
 
-     const User = mongoose.model('User', userSchema);
-     const Product = mongoose.model('Product', productSchema);
-     const Order = mongoose.model('Order', orderSchema);
+const ManagerDashboard = () => (
+  <div className="container mx-auto p-4">
+    <h1 className="text-2xl font-bold">Панель менеджера</h1>
+    <p>Просмотр отчётов</p>
+  </div>
+);
 
-     // Middleware для проверки токена
-     const authMiddleware = (roles) => async (req, res, next) => {
-       const token = req.headers.authorization?.split(' ')[1];
-       if (!token) return res.status(401).json({ error: 'Токен отсутствует' });
+const AdminDashboard = () => (
+  <div className="container mx-auto p-4">
+    <h1 className="text-2xl font-bold">Панель администратора</h1>
+    <p>Управление товарами и пользователями</p>
+  </div>
+);
 
-       try {
-         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-         if (!roles.includes(decoded.role)) return res.status(403).json({ error: 'Доступ запрещён' });
-         req.user = decoded;
-         next();
-       } catch (err) {
-         res.status(401).json({ error: 'Недействительный токен' });
-       }
-     };
+const App = () => {
+  const [user, setUser] = useState(null);
 
-     // Маршруты
-     app.post('/api/login', async (req, res) => {
-       const { email, password } = req.body;
-       const user = await User.findOne({ email, password });
-       if (!user) return res.status(401).json({ error: 'Неверные данные' });
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      axios.get('https://cashbox-backend.onrender.com/api/verify', {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => setUser(res.data.user)).catch(() => localStorage.removeItem('token'));
+    }
+  }, []);
 
-       const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
-       res.json({ user: { name: user.name, role: user.role }, token });
-     });
+  return (
+    <Router>
+      <div className="min-h-screen bg-gray-100">
+        <Routes>
+          <Route path="/login" element={!user ? <Login setUser={setUser} /> : <Navigate to="/" />} />
+          <Route path="/" element={
+            user ? (
+              user.role === 'cashier' ? <CashierDashboard /> :
+              user.role === 'manager' ? <ManagerDashboard /> :
+              user.role === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />
+            ) : <Navigate to="/login" />
+          } />
+        </Routes>
+      </div>
+    </Router>
+  );
+};
 
-     app.get('/api/verify', authMiddleware(['cashier', 'manager', 'admin']), async (req, res) => {
-       const user = await User.findById(req.user.id);
-       res.json({ user: { name: user.name, role: user.role } });
-     });
-
-     app.get('/api/products', authMiddleware(['admin', 'manager', 'cashier']), async (req, res) => {
-       const products = await Product.find();
-       res.json(products);
-     });
-
-     app.post('/api/products', authMiddleware(['admin']), async (req, res) => {
-       const product = new Product(req.body);
-       await product.save();
-       res.json(product);
-     });
-
-     app.post('/api/orders', authMiddleware(['cashier']), async (req, res) => {
-       const order = new Order({ ...req.body, cashierId: req.user.id });
-       await order.save();
-       res.json(order);
-     });
-
-     const PORT = process.env.PORT || 3000;
-     app.listen(PORT, () => console.log(`Сервер запущен на порту ${PORT}`));
+export default App;
